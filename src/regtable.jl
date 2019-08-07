@@ -20,6 +20,7 @@ Produces a publication-quality regression table, similar to Stata's `esttab` and
 * `standardize_coef` is a `Bool` that governs whether the table should show standardized coefficients. Note that this only works with `DataFrameRegressionModel`s, and that only coefficient estimates and the `below_statistic` are being standardized (i.e. the R^2 etc still pertain to the non-standardized regression).
 * `out_buffer` is an `IOBuffer` that the output gets sent to (unless an output file is specified, in which case the output is only sent to the file).
 * `renderSettings::RenderSettings` is a `RenderSettings` composite type that governs how the table should be rendered. Standard supported types are ASCII (via `asciiOutput(outfile::String)`) and LaTeX (via `latexOutput(outfile::String)`). If no argument to these two functions are given, the output is sent to STDOUT. Defaults to ASCII with STDOUT.
+* `transform_labels` is a `Function` that is used to transform labels. It takes the `String` to be transformed as an argument. See `README.md` for an example.
 
 ### Details
 A typical use is to pass a number of `AbstractRegressionResult`s to the function, along with a `RenderSettings` object.
@@ -84,7 +85,8 @@ function regtable(rr::Union{AbstractRegressionResult,DataFrameRegressionModel}..
     print_estimator_section = true,
     standardize_coef = false,
     out_buffer = IOBuffer(),
-    renderSettings::RenderSettings = asciiOutput()
+    transform_labels::Function = identity,
+    renderSettings::RenderSettings = asciiOutput()    
     )
 
     # define some functions that makes use of StatsModels' RegressionModels
@@ -122,7 +124,7 @@ function regtable(rr::Union{AbstractRegressionResult,DataFrameRegressionModel}..
     # print a warning message if standardize_coef == true but one
     # of the regression results is not a DataFrameRegressionModel
     if standardize_coef && any(.!isa.(rr,StatsModels.DataFrameRegressionModel))
-        warn("Standardized coefficients are only shown for DataFrameRegressionModel regression results.")
+        @warn("Standardized coefficients are only shown for DataFrameRegressionModel regression results.")
     end
 
     numberOfResults = size(rr,1)
@@ -178,10 +180,10 @@ function regtable(rr::Union{AbstractRegressionResult,DataFrameRegressionModel}..
         end
         # check if the regressor was not found
         if estimateLine == fill("", 2, numberOfResults+1)
-            warn("Regressor $regressor not found among regression results.")
+           @warn("Regressor $regressor not found among regression results.")
         else
             # add label on the left:
-            estimateLine[1,1] = haskey(labels,regressor) ? labels[regressor] : regressor
+            estimateLine[1,1] = haskey(labels,regressor) ? labels[regressor] : transform_labels(regressor)
             # add to estimateBlock
             estimateBlock = [estimateBlock; estimateLine]
         end
@@ -192,7 +194,7 @@ function regtable(rr::Union{AbstractRegressionResult,DataFrameRegressionModel}..
     regressandBlock = fill("", 1, numberOfResults+1)
     for rIndex = 1:numberOfResults
         # keep in mind that yname is a Symbol
-        regressandBlock[1,rIndex+1] = haskey(labels,string(yname(rr[rIndex]))) ? labels[string(yname(rr[rIndex]))] : string(yname(rr[rIndex]))
+        regressandBlock[1,rIndex+1] = haskey(labels,string(yname(rr[rIndex]))) ? labels[string(yname(rr[rIndex]))] : transform_labels(string(yname(rr[rIndex])))
     end
 
     # Regression numbering block (if we do it)
@@ -221,12 +223,19 @@ function regtable(rr::Union{AbstractRegressionResult,DataFrameRegressionModel}..
                     end
                 elseif r.feformula.args[1] == :+
                     x = r.feformula.args
-                    for i in 2:length(x) if isa(x[i], Symbol)
-                        if !(any(feList .== string(x[i])))
-                            # add to list
-                            push!(feList, string(x[i]))
+                    for i in 2:length(x) 
+                        if isa(x[i], Symbol) | isa(x[i], Expr) # if expression, push the whole expression
+                            if !(any(feList .== string(x[i])))
+                                # add to list
+                                push!(feList, string(x[i]))
+                            end
                         end
-                    end end
+                    end
+                elseif r.feformula.args[1] == :* 
+                    # push the whole interaction
+                    if !(any(feList .== string(r.feformula)))
+                        push!(feList, string(r.feformula))
+                    end
                 end
 
             end end
@@ -245,10 +254,14 @@ function regtable(rr::Union{AbstractRegressionResult,DataFrameRegressionModel}..
                     push!(fe, string(r.feformula))
                 elseif r.feformula.args[1] == :+
                     x = r.feformula.args
-                    for i in 2:length(x) if isa(x[i], Symbol)
-                        # add to list
-                        push!(fe, string(x[i]))
-                    end end
+                    for i in 2:length(x) 
+                        if isa(x[i], Symbol) | isa(x[i], Expr) # if expression, push the whole expression
+                            # add to list
+                            push!(fe, string(x[i]))
+                        end 
+                    end
+                elseif r.feformula.args[1] == :*
+                    push!(fe, string(r.feformula))
                 end
             end
             push!(febyrr, fe)
@@ -268,10 +281,10 @@ function regtable(rr::Union{AbstractRegressionResult,DataFrameRegressionModel}..
             end end
             # check if the regressor was not found
             if feLine == fill("", 1, numberOfResults+1)
-                warn("Fixed effect $fe not found in any regression results.")
+               @warn("Fixed effect $fe not found in any regression results.")
             else
                 # add label on the left:
-                feLine[1,1] = haskey(labels,fe) ? labels[fe] : fe
+                feLine[1,1] = haskey(labels,fe) ? labels[fe] : transform_labels(fe)
                 # add to estimateBlock
                 feBlock = [feBlock; feLine]
             end

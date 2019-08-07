@@ -4,6 +4,7 @@ using FixedEffectModels, GLM, RDatasets, Test
 df = dataset("datasets", "iris")
 df[:SpeciesDummy] = categorical(df[:Species])
 df[:isSmall] = categorical(df[:SepalWidth] .< 2.9)
+df[:isWide] = categorical(df[:SepalWidth] .> 2.5)
 
 # FixedEffectModels.jl
 rr1 = reg(df, @model(SepalLength ~ SepalWidth))
@@ -11,6 +12,7 @@ rr2 = reg(df, @model(SepalLength ~ SepalWidth + PetalLength   , fe = SpeciesDumm
 rr3 = reg(df, @model(SepalLength ~ SepalWidth + PetalLength + PetalWidth  , fe = SpeciesDummy  + isSmall))
 rr4 = reg(df, @model(SepalWidth ~ SepalLength + PetalLength + PetalWidth  , fe = SpeciesDummy))
 rr5 = reg(df, @model(SepalWidth ~ SepalLength + (PetalLength ~ PetalWidth)  , fe = SpeciesDummy))
+rr6 = reg(df, @model(SepalLength ~ SepalWidth, fe = SpeciesDummy * isWide + isSmall))
 
 # GLM.jl
 dobson = DataFrame(Counts = [18.,17,15,20,10,20,25,13,12],
@@ -19,6 +21,7 @@ dobson = DataFrame(Counts = [18.,17,15,20,10,20,25,13,12],
 
 lm1 = fit(LinearModel, @formula(SepalLength ~ SepalWidth), df)
 lm2 = fit(LinearModel, @formula(SepalLength ~ SepalWidth + PetalWidth), df)
+lm3 = fit(LinearModel, @formula(SepalLength ~ SepalWidth * PetalWidth), df) # testing interactions
 gm1 = fit(GeneralizedLinearModel, @formula(Counts ~ 1 + Outcome), dobson,
               Poisson())
 
@@ -44,6 +47,10 @@ function checkfilesarethesame(file1::String, file2::String)
         return true
     else
         return false
+        println("File 1:")
+        @show s1 
+        println("File 2:")
+        @show s2 
     end
 end
 
@@ -80,6 +87,9 @@ end
 
 regtable(rr1,rr2,rr3,rr5; renderSettings = asciiOutput(joinpath(dirname(@__FILE__), "tables", "test1.txt")), regression_statistics = [:nobs, :r2, :adjr2, :r2_within, :f, :p, :f_kp, :p_kp, :dof])
 @test checkfilesarethesame(joinpath(dirname(@__FILE__), "tables", "test1.txt"), joinpath(dirname(@__FILE__), "tables", "test1_reference.txt"))
+
+regtable(rr1,rr2,rr3,rr5,rr6; renderSettings = asciiOutput(joinpath(dirname(@__FILE__), "tables", "test7.txt")), regression_statistics = [:nobs, :r2, :adjr2, :r2_within, :f, :p, :f_kp, :p_kp, :dof])
+@test checkfilesarethesame(joinpath(dirname(@__FILE__), "tables", "test7.txt"), joinpath(dirname(@__FILE__), "tables", "test7_reference.txt"))
 
 regtable(lm1, lm2, gm1; renderSettings = asciiOutput(joinpath(dirname(@__FILE__), "tables", "test3.txt")), regression_statistics = [:nobs, :r2])
 @test checkfilesarethesame(joinpath(dirname(@__FILE__), "tables", "test3.txt"), joinpath(dirname(@__FILE__), "tables", "test3_reference.txt"))
@@ -123,6 +133,9 @@ regtable(rr1,rr2,rr3,rr5; renderSettings = latexOutput(joinpath(dirname(@__FILE_
 
 regtable(lm1, lm2, gm1; renderSettings = latexOutput(joinpath(dirname(@__FILE__), "tables", "test4.tex")), regression_statistics = [:nobs, :r2])
 @test checkfilesarethesame(joinpath(dirname(@__FILE__), "tables", "test4.tex"), joinpath(dirname(@__FILE__), "tables", "test4_reference.tex"))
+
+regtable(lm1, lm2, lm3, gm1; renderSettings = latexOutput(joinpath(dirname(@__FILE__), "tables", "test6.tex")), regression_statistics = [:nobs, :r2], transform_labels = escape_ampersand)
+@test checkfilesarethesame(joinpath(dirname(@__FILE__), "tables", "test6.tex"), joinpath(dirname(@__FILE__), "tables", "test6_reference.tex"))
 
 # HTML Tables
 regtable(rr1,rr2,rr3,rr5; renderSettings = htmlOutput(joinpath(dirname(@__FILE__), "tables", "test1.html")), regression_statistics = [:nobs, :r2, :adjr2, :r2_within, :f, :p, :f_kp, :p_kp, :dof])
